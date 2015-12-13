@@ -1,3 +1,5 @@
+package com.example.unsafe;
+
 import sun.misc.Unsafe;
 
 import java.lang.reflect.Field;

@@ -1,3 +1,5 @@
+package com.example.unsafe;
+
 import org.junit.Assert;
 import org.junit.Test;
 import sun.misc.Unsafe;
@@ -9,14 +11,16 @@ import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
 import java.util.Date;
-import java.util.HashSet;
+
+import static com.example.unsafe.JavaUnsafeHelper.*;
 
 /**
  * Created by Matija Vižintin
  * Date: 11. 12. 2015
  * Time: 15:47
+ *
+ * IMPORTANT NOTE: some tests crash the JVM, at least the 1.8.0_65 on osx
  */
 public class JavaUnsafeTest {
 
@@ -47,48 +51,17 @@ public class JavaUnsafeTest {
 
     @Test
     public void sizeOf() {
-        long size = sizeOf(new SomeObject());
-        System.out.printf("Size of \'SomeObject\' is %d\n", size);
+        long[] size = approxSizeOf(new SomeObject());
+        System.out.printf("Size of \'SomeObject\' is (no-padding: %d, memory-padding: %d)\n", size[0], size[1]);
     }
 
-    private long sizeOf(Object o) {
-        Unsafe unsafe = JavaUnsafe.getUnsafe();
-
-        HashSet<Field> fields = new HashSet<>();
-        Class c = o.getClass();
-        while (c != Object.class) {
-            for (Field f : c.getDeclaredFields()) {
-                if ((f.getModifiers() & Modifier.STATIC) == 0) {
-                    fields.add(f);
-                }
-            }
-            c = c.getSuperclass();
-        }
-
-        // get offset
-        long maxSize = 0;
-        for (Field f : fields) {
-            long offset = unsafe.objectFieldOffset(f);
-            if (offset > maxSize) {
-                maxSize = offset;
-            }
-        }
-
-        return ((maxSize / 8) + 1) * 8;   // padding
-    }
-
-    //@Test     NOTE: this crashes the JVM at least the 1.8.0_65 on osx
+    @Test
     public void sizeOf2() {
         Unsafe unsafe = JavaUnsafe.getUnsafe();
 
         SomeObject someObject = new SomeObject();
         long size = unsafe.getAddress(normalize(unsafe.getInt(someObject, 12L)));
         System.out.printf("Size of \'SomeObject\' is %d\n", size);
-    }
-
-    private long normalize(int value) {
-        if(value >= 0) return value;
-        return (~0L >>> 32) & value;
     }
 
     @Test
@@ -138,13 +111,13 @@ public class JavaUnsafeTest {
         System.out.printf("DateFrom on period: %s\n", date);
     }
 
-    //@Test     NOTE: this crashes the JVM at least the 1.8.0_65 on osx
+    @Test
     public void shallowCopy() {
         Unsafe unsafe = JavaUnsafe.getUnsafe();
 
         SomeObject someObject = new SomeObject();
 
-        long size = sizeOf(someObject);
+        long size = approxSizeOf(someObject)[1];
         long start = toAddress(unsafe, someObject);
 
         long address = unsafe.allocateMemory(size);
@@ -154,21 +127,10 @@ public class JavaUnsafeTest {
         System.out.printf("Shallow copy of SomeObject: %s\n", copy);
     }
 
-    private long toAddress(Unsafe unsafe, Object obj) {
-        Object[] array = new Object[] {obj};
-        long baseOffset = unsafe.arrayBaseOffset(Object[].class);
-        return normalize(unsafe.getInt(array, baseOffset));
-    }
-
-    private Object fromAddress(Unsafe unsafe, long address) {
-        Object[] array = new Object[] {null};
-        long baseOffset = unsafe.arrayBaseOffset(Object[].class);
-        unsafe.putLong(array, baseOffset, address);
-        return array[0];
-    }
-
     @Test
     public void hidePassword() throws NoSuchFieldException, IllegalAccessException {
+        Unsafe unsafe = JavaUnsafe.getUnsafe();
+
         String password = new String("securepass");
         String hidden = new String(password.replaceAll(".", "*"));
         System.out.printf("Original password: %s\n", password); // securepass
@@ -176,8 +138,7 @@ public class JavaUnsafeTest {
         Assert.assertEquals("securepass", password);
         Assert.assertEquals("**********", hidden);
 
-        Unsafe unsafe = JavaUnsafe.getUnsafe();
-        unsafe.copyMemory(hidden, 0L, null, toAddress(unsafe, password), sizeOf(password));
+        unsafe.copyMemory(hidden, 0L, null, toAddress(unsafe, password), approxSizeOf(password)[1]);
 
         System.out.printf("Original password after memory manipulation: %s\n", password);
         System.out.printf("Hidden password after memory manipulation: %s\n",hidden);
@@ -188,5 +149,16 @@ public class JavaUnsafeTest {
         for (int i=0; i < mem.length; i++) {
             mem[i] = '*';
         }
+    }
+
+    @Test
+    public void multipleInheritance() {
+        Unsafe unsafe = JavaUnsafe.getUnsafe();
+
+        long intClassAddress = normalize(unsafe.getInt(new Integer(0), 4L));
+        long strClassAddress = normalize(unsafe.getInt("", 4L));
+        unsafe.putAddress(intClassAddress + 36, strClassAddress);
+
+        String s = (String) (Object) (new Integer(666));
     }
 }

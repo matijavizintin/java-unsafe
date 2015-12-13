@@ -1,3 +1,5 @@
+package com.example.unsafe;
+
 /**
  * Created by Matija Vižintin
  * Date: 11. 12. 2015
@@ -15,6 +17,10 @@ public class SomeObject {
     }
 
     public static void main(String[] args) {
-        new SomeObject();
+        SomeObject so = new SomeObject();
+
+        long[] size = JavaUnsafeHelper.approxSizeOf(so);
+        System.out.println("size = " + size[0]);
+        System.out.println("size = " + size[1]);
     }
 }
