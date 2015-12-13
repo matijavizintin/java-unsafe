@@ -21,11 +21,16 @@ import static com.example.unsafe.JavaUnsafeHelper.*;
  * Time: 15:47
  *
  * IMPORTANT NOTE: some tests crash the JVM, at least the 1.8.0_65 on osx
+ *
+ * ANOTHER IMPORTANT NOTE: don't forget to use -XX:-UseCompressedOops otherwise jvm will compress pointers to 4bytes
+ *
+ * unsafe docs: http://www.docjar.com/html/api/sun/misc/Unsafe.java.html
  */
 public class JavaUnsafeTest {
 
     @Test
     public void memory() throws NoSuchFieldException {
+        @SuppressWarnings("unchecked")
         Unsafe unsafe = JavaUnsafe.getUnsafe();
 
         System.out.printf("Address size: %d\n", unsafe.addressSize());
@@ -55,12 +60,12 @@ public class JavaUnsafeTest {
         System.out.printf("Size of \'SomeObject\' is (no-padding: %d, memory-padding: %d)\n", size[0], size[1]);
     }
 
-    @Test
+    @Test       // TODO: it doesn't look very much accurate :)
     public void sizeOf2() {
         Unsafe unsafe = JavaUnsafe.getUnsafe();
 
         SomeObject someObject = new SomeObject();
-        long size = unsafe.getAddress(normalize(unsafe.getInt(someObject, 12L)));
+        long size = unsafe.getAddress(unsafe.getLong(someObject, 8L) + 12);
         System.out.printf("Size of \'SomeObject\' is %d\n", size);
     }
 
@@ -100,6 +105,7 @@ public class JavaUnsafeTest {
 
         // create class with unsafe
         Class<?> c = unsafe.defineClass("com/solveralynx/gema/common/Period", content, 0, content.length, null, null);
+        System.out.printf("Class name: %s\n", c.getName());
 
         // create instance and set value on it
         Object period = c.newInstance();
@@ -115,22 +121,41 @@ public class JavaUnsafeTest {
     public void shallowCopy() {
         Unsafe unsafe = JavaUnsafe.getUnsafe();
 
+        // create original object
         SomeObject someObject = new SomeObject();
+        System.out.printf("Original object of SomeObject: %s\n", someObject);
 
+        // get objects size and location
         long size = approxSizeOf(someObject)[1];
-        long start = toAddress(unsafe, someObject);
+        long sourceAddress = calculateMemoryAddress(unsafe, someObject);
 
-        long address = unsafe.allocateMemory(size);
-        unsafe.copyMemory(start, address, size);
+        // allocate new memory and copy to new location
+        long copyAddress = unsafe.allocateMemory(size);
+        unsafe.copyMemory(sourceAddress, copyAddress, size);
 
-        SomeObject copy = (SomeObject)fromAddress(unsafe, address);
+        // read copy from new location
+        SomeObject copy = (SomeObject)readFromMemoryAddress(unsafe, copyAddress);
         System.out.printf("Shallow copy of SomeObject: %s\n", copy);
+
+        Assert.assertEquals(someObject, copy);
+    }
+
+    @Test
+    public void readFromMemory() {
+        Unsafe unsafe = JavaUnsafe.getUnsafe();
+        Object mine = "Hi there".toCharArray();
+        long address = calculateMemoryAddress(unsafe, mine);
+        System.out.println("Address: " + address);
+
+        // print from memory
+        printBytesFromMemory(unsafe, address, 40);
     }
 
     @Test
     public void hidePassword() throws NoSuchFieldException, IllegalAccessException {
         Unsafe unsafe = JavaUnsafe.getUnsafe();
 
+        // create password field and a hidden copy
         String password = new String("securepass");
         String hidden = new String(password.replaceAll(".", "*"));
         System.out.printf("Original password: %s\n", password); // securepass
@@ -138,11 +163,16 @@ public class JavaUnsafeTest {
         Assert.assertEquals("securepass", password);
         Assert.assertEquals("**********", hidden);
 
-        unsafe.copyMemory(hidden, 0L, null, toAddress(unsafe, password), approxSizeOf(password)[1]);
+        // corrupt memory
+        long passwordMemoryAddress = calculateMemoryAddress(unsafe, password);
+        unsafe.copyMemory(hidden, 0L, null, passwordMemoryAddress, approxSizeOf(hidden)[1]);
 
+        // print results
         System.out.printf("Original password after memory manipulation: %s\n", password);
         System.out.printf("Hidden password after memory manipulation: %s\n",hidden);
+        Assert.assertEquals(password, hidden);
 
+        // backing array corruption
         Field stringValue = String.class.getDeclaredField("value");
         stringValue.setAccessible(true);
         char[] mem = (char[]) stringValue.get(password);
@@ -151,14 +181,14 @@ public class JavaUnsafeTest {
         }
     }
 
-    @Test
+    @Test       // TODO not working, check 36 - probably is bound to 32b jvm
     public void multipleInheritance() {
         Unsafe unsafe = JavaUnsafe.getUnsafe();
 
-        long intClassAddress = normalize(unsafe.getInt(new Integer(0), 4L));
-        long strClassAddress = normalize(unsafe.getInt("", 4L));
+        long intClassAddress = unsafe.getLong(new Integer(0), 8L);
+        long strClassAddress = unsafe.getLong("", 8L);
         unsafe.putAddress(intClassAddress + 36, strClassAddress);
 
-        String s = (String) (Object) (new Integer(666));
+        String s = (String) (Object) (new Integer(1));
     }
 }

@@ -43,21 +43,38 @@ public class JavaUnsafeHelper {
         return new long[]{maxSize, ((maxSize / 8) + 1) * 8};   // padding
     }
 
-    public static long normalize(int value) {
-        if(value >= 0) return value;
-        return (~0L >>> 32) & value;
-    }
-
-    public static long toAddress(Unsafe unsafe, Object obj) {
-        Object[] array = new Object[] {obj};
-        long baseOffset = unsafe.arrayBaseOffset(Object[].class);
-        return normalize(unsafe.getInt(array, baseOffset));
-    }
-
-    public static Object fromAddress(Unsafe unsafe, long address) {
-        Object[] array = new Object[] {null};
+    public static Object readFromMemoryAddress(Unsafe unsafe, long address) {
+        Object[] array = new Object[]{null};
         long baseOffset = unsafe.arrayBaseOffset(Object[].class);
         unsafe.putLong(array, baseOffset, address);
         return array[0];
+    }
+
+    public static long calculateMemoryAddress(Unsafe unsafe, Object o) {
+        Object[] array = new Object[]{o};
+
+        long baseOffset = unsafe.arrayBaseOffset(Object[].class);
+        int addressSize = unsafe.addressSize();
+        long objectAddress;
+        switch (addressSize) {
+            case 4:
+                objectAddress = unsafe.getInt(array, baseOffset);
+                break;
+            case 8:
+                objectAddress = unsafe.getLong(array, baseOffset);
+                break;
+            default:
+                throw new Error("unsupported address size: " + addressSize);
+        }
+
+        return objectAddress;
+    }
+
+    public static void printBytesFromMemory(Unsafe unsafe, long objectAddress, int limit) {
+        for (long i = 24; i < limit; i = i + 2) {
+            int cur = unsafe.getByte(objectAddress + i);
+            System.out.print((char)cur);
+        }
+        System.out.println();
     }
 }
