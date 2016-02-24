@@ -22,3 +22,7 @@ gradle-app.setting
 hs_err_pid*
 
 # Created by .ignore support plugin (hsz.mobi)
+
+# idea
+.idea
+out
